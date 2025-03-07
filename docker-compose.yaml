@@ -1,0 +1,29 @@
+services:
+  dotnet-subscriber:
+    build:
+      context: ./dotnet_subscriber
+      dockerfile_inline: |
+        FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+        WORKDIR /app
+        COPY . .
+        RUN dotnet publish -c Release -o out
+
+        FROM mcr.microsoft.com/dotnet/runtime:8.0
+        WORKDIR /app
+        COPY --from=build /app/out .
+        CMD ["dotnet", "dotnet_subscriber.dll"]
+    image: dotnet_redis_subscriber
+    container_name: dotnet_redis_subscriber_container
+    volumes:
+      - /var/run/redis/redis.sock:/var/run/redis/redis.sock
+  # redis-subscriber: # for testing
+  #   build:
+  #     context: .
+  #     dockerfile_inline: |
+  #       FROM debian:latest
+  #       RUN apt-get update && apt-get install -y redis-tools
+  #       CMD sh -c 'echo "Container IP: $(hostname -I)"; /usr/bin/redis-cli -s /redis/redis.sock PSUBSCRIBE __keyevent@0__:*'
+  #   image: redis_event_test
+  #   container_name: redis_event_test_container
+  #   volumes:
+  #     - /var/run/redis/redis.sock:/redis/redis.sock

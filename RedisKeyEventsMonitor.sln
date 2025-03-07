@@ -1,0 +1,24 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RedisKeyEventsMonitor", "RedisKeyEventsMonitor.csproj", "{8DE49270-9A31-D42C-0615-ADE4215A932F}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{8DE49270-9A31-D42C-0615-ADE4215A932F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8DE49270-9A31-D42C-0615-ADE4215A932F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8DE49270-9A31-D42C-0615-ADE4215A932F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8DE49270-9A31-D42C-0615-ADE4215A932F}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {EEADE3CD-F942-4E9C-AB81-E2B96585F450}
+	EndGlobalSection
+EndGlobal

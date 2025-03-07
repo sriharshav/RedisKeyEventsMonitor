@@ -92,6 +92,14 @@ RESP parser supports:
 
 Contributions, bug fixes, and improvements are welcome! Feel free to open issues or submit pull requests on the project's repository.
 
+## Docker containers ##
+
+To test as standalone container, update csproj with `OutputType` as `Exe` 
+
+    <Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+
 ## License ##
 
 This project is licensed under the MIT License. See the LICENSE file for details.
