@@ -1,20 +1,3 @@
-// -----------------------------------------------------------------------
-// <summary>
-//   Contains the implementation of the RedisSubscriberService which
-//   supports both Unix domain sockets and TCP connections for subscribing
-//   to Redis key events.
-// </summary>
-// <author>
-//   Sriharsha V. Thimmareddy
-// </author>
-// <date>
-//   2025/06/03
-// </date>
-// <license>
-//   MIT
-// </license>
-// -----------------------------------------------------------------------
-
 using System;
 using System.IO;
 using System.Net;
@@ -26,15 +9,45 @@ using Microsoft.Extensions.Hosting;
 
 namespace RedisKeyEventsMonitor
 {
+    /// <summary>
+    /// Represents a Redis key event notification including the key name and (optionally) its current value.
+    /// </summary>
+    public class RedisKeyEvent
+    {
+        public string MessageType { get; set; } = string.Empty;
+        public string Pattern { get; set; } = string.Empty;
+        public string Channel { get; set; } = string.Empty;
+        public string Key { get; set; } = string.Empty;
+        public string? Value { get; set; }
+    }
+
+    /// <summary>
+    /// A background service that subscribes to Redis key event notifications.
+    /// It optionally uses a value retriever delegate to query the current key value.
+    /// </summary>
     public class RedisSubscriberService : BackgroundService
     {
         private readonly EndPoint _endpoint;
-        private readonly Func<string, Task> _processNotification;
+        private readonly Func<RedisKeyEvent, Task> _processNotification;
+        private readonly Func<string, Task<string>>? _valueRetriever;
 
-        public RedisSubscriberService(EndPoint endpoint, Func<string, Task> processNotification)
+        /// <summary>
+        /// Initializes a new instance of the RedisSubscriberService.
+        /// </summary>
+        /// <param name="endpoint">The endpoint (Unix or TCP) for connecting to Redis.</param>
+        /// <param name="processNotification">Delegate to process the complete key event.</param>
+        /// <param name="valueRetriever">
+        /// Optional delegate that retrieves the current key value.
+        /// It receives a key name and returns its value as a string.
+        /// </param>
+        public RedisSubscriberService(
+            EndPoint endpoint,
+            Func<RedisKeyEvent, Task> processNotification,
+            Func<string, Task<string>>? valueRetriever = null)
         {
             _endpoint = endpoint;
             _processNotification = processNotification;
+            _valueRetriever = valueRetriever;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -43,7 +56,7 @@ namespace RedisKeyEventsMonitor
 
             try
             {
-                using var socket = CreateSocket();
+                using var socket = RedisProtocolHelper.CreateSocket(_endpoint);
                 Console.WriteLine("Connecting to Redis...");
                 socket.Connect(_endpoint);
 
@@ -51,15 +64,15 @@ namespace RedisKeyEventsMonitor
                 using var writer = new StreamWriter(stream, Encoding.ASCII) { AutoFlush = true };
                 using var reader = new StreamReader(stream, Encoding.ASCII);
 
-                // Send subscription command
-                await writer.WriteAsync("PSUBSCRIBE __keyevent@*:*\r\n");
+                // Send the subscription command.
+                await writer.WriteAsync("PSUBSCRIBE __keyevent@*:* \r\n");
                 Console.WriteLine("Subscribed to key events.");
 
-                // Read initial confirmation message
+                // Read the initial subscription confirmation message.
                 var initialMessage = await ReadRedisMessageAsync(reader, stoppingToken);
                 Console.WriteLine($"Initial response: {string.Join(" | ", initialMessage)}");
 
-                // Process notifications
+                // Continuously process notifications.
                 while (!stoppingToken.IsCancellationRequested)
                 {
                     try
@@ -67,13 +80,29 @@ namespace RedisKeyEventsMonitor
                         var message = await ReadRedisMessageAsync(reader, stoppingToken);
                         if (message != null && message.Length >= 4)
                         {
-                            // Format:
-                            // [0]: message type ("pmessage")
-                            // [1]: subscription pattern
-                            // [2]: channel name
-                            // [3]: payload (the key event)
-                            string formatted = $"Type: {message[0]}, Pattern: {message[1]}, Channel: {message[2]}, Payload: {message[3]}";
-                            await _processNotification(formatted);
+                            var keyEvent = new RedisKeyEvent
+                            {
+                                MessageType = message[0],
+                                Pattern = message[1],
+                                Channel = message[2],
+                                Key = message[3]
+                            };
+
+                            // If a value retriever delegate is provided, use it.
+                            if (_valueRetriever != null)
+                            {
+                                try
+                                {
+                                    keyEvent.Value = await _valueRetriever(keyEvent.Key);
+                                }
+                                catch (Exception ex)
+                                {
+                                    Console.WriteLine($"Error retrieving value for key '{keyEvent.Key}': {ex.Message}");
+                                    keyEvent.Value = null;
+                                }
+                            }
+
+                            await _processNotification(keyEvent);
                         }
                         else
                         {
@@ -98,88 +127,22 @@ namespace RedisKeyEventsMonitor
         }
 
         /// <summary>
-        /// Creates a socket based on the type of endpoint.
-        /// </summary>
-        private Socket CreateSocket()
-        {
-            if (_endpoint is UnixDomainSocketEndPoint)
-            {
-                return new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
-            }
-            else if (_endpoint is IPEndPoint)
-            {
-                return new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-            }
-            else
-            {
-                throw new InvalidOperationException("Unsupported endpoint type.");
-            }
-        }
-
-        /// <summary>
         /// Reads a complete Redis multi-bulk message from the stream.
         /// </summary>
         private async Task<string[]> ReadRedisMessageAsync(StreamReader reader, CancellationToken cancellationToken)
         {
-            // Read the multi-bulk header (e.g., "*4")
             string? header = await reader.ReadLineAsync();
             if (string.IsNullOrEmpty(header) || header[0] != '*')
                 throw new InvalidDataException("Expected multi-bulk header starting with '*'.");
-
             if (!int.TryParse(header.Substring(1), out int count))
                 throw new InvalidDataException("Invalid multi-bulk header count.");
 
             string[] message = new string[count];
             for (int i = 0; i < count; i++)
             {
-                message[i] = await ReadRESPObjectAsync(reader, cancellationToken);
+                message[i] = await RedisProtocolHelper.ReadRESPObjectAsync(reader, cancellationToken);
             }
             return message;
-        }
-
-        /// <summary>
-        /// Reads a single RESP object (bulk string, simple string, integer, or error) from the stream.
-        /// </summary>
-        private async Task<string> ReadRESPObjectAsync(StreamReader reader, CancellationToken cancellationToken)
-        {
-            string? line = await reader.ReadLineAsync();
-            if (string.IsNullOrEmpty(line))
-                throw new EndOfStreamException("Unexpected end of stream.");
-
-            char prefix = line[0];
-            switch (prefix)
-            {
-                case '$': // Bulk string
-                    if (!int.TryParse(line.Substring(1), out int length))
-                        throw new InvalidDataException("Invalid bulk string length.");
-
-                    if (length == -1) return string.Empty;
-
-                    char[] buffer = new char[length];
-                    int read = 0;
-                    while (read < length)
-                    {
-                        int r = await reader.ReadAsync(buffer, read, length - read);
-                        if (r == 0)
-                            throw new EndOfStreamException("Unexpected end of stream while reading bulk string.");
-                        read += r;
-                    }
-                    // Discard trailing CRLF
-                    await reader.ReadLineAsync();
-                    return new string(buffer);
-
-                case '+': // Simple string
-                    return line.Substring(1);
-
-                case ':': // Integer
-                    return line.Substring(1);
-
-                case '-': // Error
-                    throw new Exception("Redis error: " + line.Substring(1));
-
-                default:
-                    throw new InvalidDataException("Unexpected RESP type: " + prefix);
-            }
         }
     }
 }
