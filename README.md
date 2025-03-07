@@ -7,6 +7,7 @@ RedisKeyEventsMonitor is a .NET library that provides a background service for s
 - Background Service: Built as a .NET Generic Host background service for seamless integration.
 - Customizable Notification Handling: Easily provide your own logic via a delegate for processing each notification.
 - Reusable Library: Package as a NuGet package to be consumed in any .NET application.
+- Retrieve the string value of the key associated with the subscribed event.
 
 **Installation**
 Install via NuGet Package Manager or with the command line:
