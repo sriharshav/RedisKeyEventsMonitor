@@ -12,7 +12,7 @@ RedisKeyEventsMonitor is a .NET library that provides a background service for s
 Install via NuGet Package Manager or with the command line:
 
 ```bash
-dotnet add package RedisKeyEventsMonitor --version 1.0.0
+dotnet add package RedisKeyEventsMonitor --version 1.0.1
 ```
 
 ## Usage example ##
