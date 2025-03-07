@@ -5,32 +5,38 @@ using System.Threading.Tasks;
 namespace RedisKeyEventsMonitor
 {
     /// <summary>
-    /// A simple client that encapsulates the Redis endpoint and provides methods for both subscription and key retrieval.
+    /// Encapsulates the Redis endpoint and a persistent command connection.
     /// </summary>
-    public class RedisClient
+    public class RedisClient : IDisposable
     {
         public EndPoint Endpoint { get; }
+        private readonly RedisCommandClient _commandClient;
 
         public RedisClient(EndPoint endpoint)
         {
             Endpoint = endpoint;
+            _commandClient = new RedisCommandClient(endpoint);
         }
 
         /// <summary>
-        /// Retrieves the current value of a key using a raw GET command over the configured endpoint.
+        /// Uses the persistent command connection to retrieve a key's value.
         /// </summary>
-        public Task<string> RetrieveKeyValue(string key)
+        public Task<string> RetrieveKeyValueAsync(string key)
         {
-            // Uses the same endpoint as the subscription.
-            return RedisProtocolHelper.RetrieveKeyValue(Endpoint, key);
+            return _commandClient.RetrieveKeyValueAsync(key);
         }
 
         /// <summary>
-        /// Creates a subscription client that uses the same endpoint.
+        /// Creates a subscription client that uses its own connection (as required by Redis).
         /// </summary>
         public RedisSubscriptionClient CreateSubscriptionClient()
         {
             return new RedisSubscriptionClient(Endpoint);
+        }
+
+        public void Dispose()
+        {
+            _commandClient.Dispose();
         }
     }
 }

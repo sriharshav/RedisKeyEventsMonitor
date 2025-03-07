@@ -8,18 +8,16 @@ using System.Threading.Tasks;
 
 namespace RedisKeyEventsMonitor
 {
-    /// <summary>
-    /// Encapsulates a connection for subscribing to Redis events.
-    /// </summary>
-    public class RedisSubscriptionClient : IDisposable
+    public class RedisCommandClient : IDisposable
     {
         private readonly EndPoint _endpoint;
         private readonly Socket _socket;
         private readonly NetworkStream _stream;
         private readonly StreamReader _reader;
         private readonly StreamWriter _writer;
+        private readonly SemaphoreSlim _semaphore = new SemaphoreSlim(1, 1);
 
-        public RedisSubscriptionClient(EndPoint endpoint)
+        public RedisCommandClient(EndPoint endpoint)
         {
             _endpoint = endpoint;
             _socket = RedisProtocolHelper.CreateSocket(_endpoint);
@@ -30,22 +28,20 @@ namespace RedisKeyEventsMonitor
         }
 
         /// <summary>
-        /// Sends a PSUBSCRIBE command for the given pattern and prints the subscription confirmation.
+        /// Uses the persistent connection to send a GET command and read its response.
         /// </summary>
-        public async Task SubscribeAsync(string pattern, CancellationToken cancellationToken)
+        public async Task<string> RetrieveKeyValueAsync(string key)
         {
-            string command = $"PSUBSCRIBE {pattern}\r\n";
-            await _writer.WriteAsync(command);
-            var confirmation = await RedisProtocolHelper.ReadRedisMessageAsync(_reader, cancellationToken);
-            Console.WriteLine("Subscription confirmation: " + string.Join(" | ", confirmation));
-        }
-
-        /// <summary>
-        /// Reads the next complete message from Redis.
-        /// </summary>
-        public async Task<string[]> ReadMessageAsync(CancellationToken cancellationToken)
-        {
-            return await RedisProtocolHelper.ReadRedisMessageAsync(_reader, cancellationToken);
+            await _semaphore.WaitAsync();
+            try
+            {
+                await _writer.WriteAsync($"GET {key}\r\n");
+                return await RedisProtocolHelper.ReadRESPObjectAsync(_reader, CancellationToken.None);
+            }
+            finally
+            {
+                _semaphore.Release();
+            }
         }
 
         public void Dispose()
@@ -54,6 +50,7 @@ namespace RedisKeyEventsMonitor
             _writer?.Dispose();
             _stream?.Dispose();
             _socket?.Dispose();
+            _semaphore?.Dispose();
         }
     }
 }

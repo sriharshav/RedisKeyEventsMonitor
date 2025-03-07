@@ -15,79 +15,56 @@ Install via NuGet Package Manager or with the command line:
 dotnet add package RedisKeyEventsMonitor --version 1.0.0
 ```
 
-## Using with a Unix Domain Socket ##
+## Usage example ##
 
-If your Redis server is configured to use a Unix domain socket (e.g., redis.sock), you can set up the service as follows:
+If your Redis server is configured to use a Unix domain socket (e.g., redis.sock) or TCP, you can set up the service as follows:
 
-    using Microsoft.Extensions.DependencyInjection;
-    using Microsoft.Extensions.Hosting;
-    using System.Net;
-    using System.Net.Sockets;
-    using System.Threading.Tasks;
-    using RedisKeyEventsMonitor;
-
-    namespace <namespace>
+    public class Program
     {
-        public class Program
+        // Use default! to silence the warning since it will be initialized in Main.
+        private static RedisClient _redisClient = default!;
+
+        /// <summary>
+        /// Delegate that retrieves the current value for a key using the persistent RedisClient,
+        /// prints it to the console, and does not return a value.
+        /// </summary>
+        public static async Task RetrieveKeyValue(string key)
         {
-            public static async Task Main(string[] args)
-            {
-                // Define the Unix domain socket endpoint.
-                EndPoint endpoint = new UnixDomainSocketEndPoint("/var/run/redis/redis.sock");
-
-                var host = Host.CreateDefaultBuilder(args)
-                    .ConfigureServices((hostContext, services) =>
-                    {
-                        services.AddHostedService<RedisSubscriberService>(provider =>
-                            new RedisSubscriberService(endpoint, async (notification) =>
-                            {
-                                // Handle the notification.
-                                System.Console.WriteLine($"Received notification: {notification}");
-                                await Task.CompletedTask;
-                            }));
-                    })
-                    .Build();
-
-                await host.RunAsync();
-            }
+            string value = await _redisClient.RetrieveKeyValueAsync(key);
+            Console.WriteLine($"Retrieved value for key '{key}': {value}");
         }
-    }
 
-## Using with a TCP Socket ##
-
-For a typical TCP connection to Redis (for example, running on localhost:6379), use this configuration:
-
-
-    using Microsoft.Extensions.DependencyInjection;
-    using Microsoft.Extensions.Hosting;
-    using System.Net;
-    using System.Threading.Tasks;
-    using RedisKeyEventsMonitor;
-
-    namespace <namespace>
-    {
-        public class Program
+        public static async Task Main(string[] args)
         {
-            public static async Task Main(string[] args)
-            {
-                // Define the TCP endpoint.
-                EndPoint endpoint = new IPEndPoint(IPAddress.Loopback, 6379);
+            // Define a single endpoint for both subscription and key retrieval.
+            EndPoint endpoint = new UnixDomainSocketEndPoint("/var/run/redis/redis.sock");
+            // Alternatively, for TCP:
+            // EndPoint endpoint = new IPEndPoint(System.Net.IPAddress.Loopback, 6379);
 
-                var host = Host.CreateDefaultBuilder(args)
-                    .ConfigureServices((hostContext, services) =>
-                    {
-                        services.AddHostedService<RedisSubscriberService>(provider =>
-                            new RedisSubscriberService(endpoint, async (notification) =>
+            // Create a single persistent RedisClient instance.
+            _redisClient = new RedisClient(endpoint);
+
+            var host = Host.CreateDefaultBuilder(args)
+                .ConfigureServices((hostContext, services) =>
+                {
+                    // Register the RedisSubscriberService as a hosted service,
+                    // using the same endpoint and the RetrieveKeyValue delegate.
+                    services.AddHostedService<RedisSubscriberService>(provider =>
+                        new RedisSubscriberService(
+                            endpoint,
+                            async (redisEvent) =>
                             {
-                                // Handle the notification.
-                                System.Console.WriteLine($"Received notification: {notification}");
+                                Console.WriteLine($"Received event: Type={redisEvent.MessageType}, " +
+                                                  $"Pattern={redisEvent.Pattern}, Channel={redisEvent.Channel}, " +
+                                                  $"Key={redisEvent.Key}");
                                 await Task.CompletedTask;
-                            }));
-                    })
-                    .Build();
+                            },
+                            RetrieveKeyValue
+                        ));
+                })
+                .Build();
 
-                await host.RunAsync();
-            }
+            await host.RunAsync();
         }
     }
 

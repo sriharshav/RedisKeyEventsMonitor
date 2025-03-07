@@ -10,28 +10,16 @@ namespace RedisKeyEventsMonitor
 {
     public static class RedisProtocolHelper
     {
-        /// <summary>
-        /// Creates a socket based on the type of endpoint.
-        /// </summary>
         public static Socket CreateSocket(EndPoint endpoint)
         {
             if (endpoint is UnixDomainSocketEndPoint)
-            {
                 return new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
-            }
             else if (endpoint is IPEndPoint)
-            {
                 return new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-            }
             else
-            {
                 throw new InvalidOperationException("Unsupported endpoint type.");
-            }
         }
 
-        /// <summary>
-        /// Reads a complete Redis multi-bulk message from the stream.
-        /// </summary>
         public static async Task<string[]> ReadRedisMessageAsync(StreamReader reader, CancellationToken cancellationToken)
         {
             string? header = await reader.ReadLineAsync();
@@ -48,9 +36,6 @@ namespace RedisKeyEventsMonitor
             return message;
         }
 
-        /// <summary>
-        /// Reads a single RESP object (bulk string, simple string, integer, or error) from the stream.
-        /// </summary>
         public static async Task<string> ReadRESPObjectAsync(StreamReader reader, CancellationToken cancellationToken)
         {
             string? line = await reader.ReadLineAsync();
@@ -60,7 +45,7 @@ namespace RedisKeyEventsMonitor
             char prefix = line[0];
             switch (prefix)
             {
-                case '$': // Bulk string
+                case '$':
                     if (!int.TryParse(line.Substring(1), out int length))
                         throw new InvalidDataException("Invalid bulk string length.");
                     if (length == -1)
@@ -77,13 +62,13 @@ namespace RedisKeyEventsMonitor
                     await reader.ReadLineAsync(); // Discard trailing CRLF.
                     return new string(buffer);
 
-                case '+': // Simple string
+                case '+':
                     return line.Substring(1);
 
-                case ':': // Integer
+                case ':':
                     return line.Substring(1);
 
-                case '-': // Error
+                case '-':
                     throw new Exception("Redis error: " + line.Substring(1));
 
                 default:
@@ -91,13 +76,11 @@ namespace RedisKeyEventsMonitor
             }
         }
 
-        /// <summary>
-        /// Sends a raw GET command to Redis and returns the key's value.
-        /// </summary>
         public static async Task<string> RetrieveKeyValue(EndPoint endpoint, string key)
         {
             using Socket socket = CreateSocket(endpoint);
             socket.Connect(endpoint);
+
             using NetworkStream stream = new NetworkStream(socket, ownsSocket: false);
             using StreamWriter writer = new StreamWriter(stream, Encoding.ASCII) { AutoFlush = true };
             using StreamReader reader = new StreamReader(stream, Encoding.ASCII);
